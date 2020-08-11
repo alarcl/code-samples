@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru" ng-app="ProjectEventsApp">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<meta charset="utf-8">
+
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<title>Регистрация событий проекта</title>
+
+	<link rel="stylesheet" href="css/bootstrap/css/bootstrap.min.css">
+	<link rel="stylesheet" href="css/font-awesome/css/font-awesome.min.css">
+
+	<style>
+	.btn-group > button {
+		-webkit-border-radius: 0 !important;
+		-moz-border-radius: 0 !important;
+		border-radius: 0 !important;
+	}
+	</style>
+
+	<script src="js/angular.min.js"></script>
+	<script src="js/angular-touch.min.js"></script>
+	<script src="js/ui-bootstrap.min.js"></script>
+
+	<script src="app.js"></script>
+</head>
+<body ng-controller="ProjectEventsCtrl">
+<div class="container">
+<div class="row">
+<div class="col-xs-12">
+	<form role="form" id="ProjectEventsForm" name="ProjectEventsForm11" this-element="project_events_form" novalidate ng-show="state.show_form">
+		<h3>РЕГИСТРАЦИЯ <small>СОБЫТИЙ</small></h3>
+
+		<hr style="background:gray; border:0; height:5px;">
+
+		<div class="form-group">
+			<h4 class="bg-success" ng-bind="current_event.event.EventDescription"></h4>
+			<div class="btn-group btn-group-justified" ng-repeat="events_chunk in events_by_3">
+				<div class="btn-group btn-group-lg" ng-repeat="event in events_chunk">
+					<button type="button" class="btn btn-default" ng-model="current_event.event" btn-radio="event" ng-hide="event.hide" ng-bind="event.EventName"></button>
+				</div>
+			</div>
+		</div>
+		<div class="form-group" ng-show="user_data.Project === 0">
+			<!-- <h5 class="bg-warning" ng-show="state.project.searching"><i class="fa fa-spinner fa-spin"></i> Идет поиск близлежащих проектов</h5> -->
+
+			<div class="input-group input-group-lg">
+
+			<input type="number" name="project_id" class="form-control" placeholder="номер проекта" ng-model="project_id" required>
+
+			<div class="input-group-btn" dropdown>
+				<button type="button" class="btn btn-default dropdown-toggle" ng-disabled="!state.project.found">
+					<i class="fa fa-spinner fa-spin fa-lg" ng-show="state.project.searching"></i> Проекты <span class="caret"></span>
+				</button>
+				<ul class="dropdown-menu dropdown-menu-right" role="menu" ng-click="setProjectId($event)">
+					<li ng-repeat="project in nearest_projects.NearestProject | orderBy:'Distance'">
+						<button class="btn btn-default btn-lg btn-block" ng-bind-template="№{{project.ProjectID}} ({{project.Distance}} метров)"></button>
+					</li>
+				</ul>
+			</div>
+			</div>
+		</div>
+		<div class="form-group" ng-show="state.use_camera" ng-swipe-right="state.use_camera = false">
+			<input type="file" name="photos[]" class="form-control input-lg" capture="camera" accept="image/*" multi-file="file_inputs">
+		</div>
+		<div class="form-group" ng-show="!state.use_camera" ng-swipe-left="state.use_camera = true">
+			<input type="file" name="photos[]" class="form-control input-lg" accept="image/*" multiple multi-file="file_inputs">
+		</div>
+		<div class="form-group">
+			<textarea name="comment" class="form-control input-lg" ng-model="comment" placeholder="сообщение" rows="4" required></textarea>
+		</div>
+
+		<hr style="background:gray; border:0; height:5px;">
+
+		<button class="btn btn-warning btn-lg btn-block" ng-click="send()" ng-disabled="!project_id || !comment">Отправить</button>
+	</form>
+
+	<div ng-show="!state.show_form">
+		<h3>РЕГИСТРАЦИЯ <small>СОБЫТИЙ</small></h3>
+
+		<hr style="background:gray; border:0; height:5px;">
+
+		<div style="display: table; height: 100%; width: 100%;" ng-show="state.uploading">
+			<div style="display: table-cell; text-align: center; vertical-align: middle;">'
+				<i class="fa fa-spinner fa-spin fa-5x"></i>
+			</div>
+		</div>
+
+		<div class="panel panel-default" ng-show="!state.uploading">
+			<div class="panel-body">
+				<h4 ng-bind="state.response_desc"></h4>
+			</div>
+		</div>
+
+		<ul class="list-unstyled" ng-show="!state.uploading">
+			<li ng-repeat="resp in state.result.Response" ng-bind="resp.Description"></li>
+		</ul>
+
+		<hr style="background:gray; border:0; height:5px;">
+
+		<button class="btn btn-warning btn-lg btn-block" ng-click="state.show_form=true; state.result=null; state.response_desc=null;" ng-disabled="state.uploading">Назад</button>
+	</div>
+</div>
+</div>
+</div>
+</body>
+</html>

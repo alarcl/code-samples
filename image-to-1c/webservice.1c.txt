@@ -1,0 +1,283 @@
+﻿
+procedure AddResponseData(AddProjectEventResult, TypeResponseData, IsError, Description)
+	ResponseData = ФабрикаXDTO.Создать(TypeResponseData);
+	ResponseData.IsError 		= IsError;
+	ResponseData.Description 	= Description;
+	
+	AddProjectEventResult.Response.Добавить(ResponseData);
+endprocedure
+
+function AddProjectEvent(UserKey, Project, Event, Comment, FileCount, TableImage_photos)
+	Comment = trimall(Comment);
+			
+	TypeAddProjectEventResult = ФабрикаXDTO.Тип("ProjectEvents", "AddProjectEventResult");
+	TypeResponseData = 			ФабрикаXDTO.Тип("ProjectEvents", "ResponseData");
+	
+	AddProjectEventResult = ФабрикаXDTO.Создать(TypeAddProjectEventResult);
+	
+	if not ЗначениеЗаполнено(Project) then
+		AddResponseData(AddProjectEventResult, TypeResponseData, true, "Не задан проект");
+		return AddProjectEventResult;
+	endif;
+	if not ЗначениеЗаполнено(Comment) then
+		AddResponseData(AddProjectEventResult, TypeResponseData, true, "Не указано сообщение");
+		return AddProjectEventResult;
+	endif;
+	
+	//поиск пользователя
+	пользователь_ссылка = Справочники.ProjectEventUsers.НайтиПоРеквизиту("КлючДоступа", UserKey);
+	
+	if пользователь_ссылка = Справочники.ProjectEventUsers.ПустаяСсылка() then
+		AddResponseData(AddProjectEventResult, TypeResponseData, true, "Не верно указан ключ доступа");
+		return AddProjectEventResult;
+	endif;
+	
+
+	//поиск проекта	
+	if (пользователь_ссылка.Проект = Справочники.Проекты.ПустаяСсылка()) then
+		проект_ссылка = Справочники.Проекты.НайтиПоКоду(Project);
+		if проект_ссылка = undefined or проект_ссылка = Справочники.Проекты.ПустаяСсылка() then
+			AddResponseData(AddProjectEventResult, TypeResponseData, true, "Проекта с номером "+Project+" нет. Событие не добавлено");
+			return AddProjectEventResult;
+		endif;
+	else
+		проект_ссылка = пользователь_ссылка.Проект;
+	endif;
+
+	//поиск максимального события по этому проекту
+	запрос_событие_проекта = new query("
+		|select max(НомерСобытия) НомерСобытия
+		|from справочник.ProjectEvents
+		|where Проект = &проект"
+	);
+	запрос_событие_проекта.УстановитьПараметр("проект", проект_ссылка);
+	
+	выборка_событие_проекта = запрос_событие_проекта.Выполнить().Выбрать();
+	выборка_событие_проекта.Следующий();
+	
+	if ЗначениеЗаполнено(выборка_событие_проекта.НомерСобытия) then
+		событие_проекта = выборка_событие_проекта.НомерСобытия + 1;
+	else
+		событие_проекта = 1;
+	endif;	
+
+	//добавление файлов
+	колво_добавленных_фото = 0;
+	if TableImage_photos <> undefined then
+		путь_проект = format(проект_ссылка.Код,"NG=0;NZ=0") + "\events\" + format(событие_проекта,"NG=0;NZ=0");
+		ПапкаФото = Константы.ПутьКФотографиямПроектов.Получить() + путь_проект;
+		СоздатьКаталог(ПапкаФото);		
+	
+		for each image in TableImage_photos.RowImage do		
+			имя_файла = image.ImageName;
+			
+			дд = image.ImageBinary;
+			
+			проверка_существования_файла = new Файл(ПапкаФото+"\"+имя_файла);
+			if (проверка_существования_файла.Существует()) then
+				if (проверка_существования_файла.Размер() = дд.Размер()) then
+					//размер совпал, считаем что два файла идентичны
+					AddResponseData(AddProjectEventResult, TypeResponseData, true, "Копирование не выполнено для файла "+имя_файла+", такой файл уже существует");
+					continue;
+				else
+					//размер не совпал, переименовываем файл
+					имя_без_расширения = проверка_существования_файла.ИмяБезРасширения;
+					расширение_файла = проверка_существования_файла.Расширение;
+					
+					i = 0;
+					существует_с_другим_именем = false;
+					имя_без_расширения_проверка = имя_без_расширения;
+					while 0=0 do
+						i = i + 1;
+						
+						имя_без_расширения_проверка = имя_без_расширения + "_" + i;
+						
+						проверка_существования_файла = new Файл(ПапкаФото+"\"+имя_без_расширения_проверка+расширение_файла);					
+						
+						if проверка_существования_файла.Существует() and проверка_существования_файла.Размер() = дд.Размер() then
+							существует_с_другим_именем = true;						
+							break;
+						elsif проверка_существования_файла.Существует() then
+							continue;
+						else //if not проверка_существования_файла.Существует() then
+							AddResponseData(AddProjectEventResult, TypeResponseData, false, имя_файла+" переименован в "+имя_без_расширения_проверка+расширение_файла);
+							имя_файла = имя_без_расширения_проверка+расширение_файла;                                                      						
+							break;
+						endif;					
+					enddo;
+					
+					if существует_с_другим_именем then
+						//хтмл_возврат = хтмл_возврат +"Файл "+имя_файла+" уже существут в "+путь_проект+" под именем "+имя_без_расширения_проверка+расширение_файла;
+						AddResponseData(AddProjectEventResult, TypeResponseData, true, "Файл "+имя_файла+" уже существут под именем "+имя_без_расширения_проверка+расширение_файла);
+						continue;
+					endif;				
+						
+				endif;			
+			endif;
+			
+					
+			try
+				//дд = Base64Значение(image.ImageBinary);
+				дд.Записать(ПапкаФото+"\"+имя_файла);
+				
+				колво_добавленных_фото = колво_добавленных_фото + 1;
+				
+				AddResponseData(AddProjectEventResult, TypeResponseData, false, имя_файла+" - успешно загружен");
+			except
+				AddResponseData(AddProjectEventResult, TypeResponseData, true, "Неудачная попытка сохранения "+имя_файла);
+				continue;
+			endtry; 	
+		enddo;
+	endif;
+	
+	//запись в историю изменений о добавлении новых фотографий
+	if (колво_добавленных_фото > 0) then
+		имя_дир = ПапкаФото;
+		while find(имя_дир,"\")>0 do
+			имя_дир = right(имя_дир,strlen(имя_дир)-find(имя_дир,"\"));
+		enddo;
+		try
+			//ЛогированиеИзменений.ЛогированиеИзмененийДобавлениеУдалениеФотоПроекта(проект_ссылка,"добавлены фото в "+имя_дир);
+		except
+			//хтмл_возврат = хтмл_возврат + "Ошибка при логировании"
+		endtry;	
+	else
+		//закомментировано - разрешено добавление сообщений без фотографий
+		//AddResponseData(AddProjectEventResult, TypeResponseData, true, "Файлы не были добавлены");
+		//return AddProjectEventResult;
+	endif;
+	
+	if (колво_добавленных_фото=0 and FileCount>0) then
+		AddResponseData(AddProjectEventResult, TypeResponseData, true, "Ни один файл не добавлен. Событие не добавлено");
+		return AddProjectEventResult;
+	endif;
+	
+	if (колво_добавленных_фото>0 and FileCount>0 and колво_добавленных_фото<>FileCount) then
+		AddResponseData(AddProjectEventResult, TypeResponseData, true, "Не все файлы были добавлены");
+	endif;	
+	
+	//добавление записи в справочник ProjectEvents
+	project_events = Справочники.ProjectEvents.СоздатьЭлемент();
+	
+	project_events.Дата = ТекущаяДата();
+	project_events.Пользователь = пользователь_ссылка;
+	project_events.Проект = проект_ссылка;
+	project_events.Событие = Справочники.ProjectEventTypes.НайтиПоКоду(Event);
+	project_events.Комментарий = Comment;	
+	project_events.НомерСобытия = событие_проекта;
+	
+	//считаем регкод
+	code_nn = right(format(событие_проекта,"NG=0;NZ=0"), 2);
+	code_nn = ?(strlen(code_nn) = 1, "0"+code_nn, code_nn);	
+	
+	code_files = right(format(колво_добавленных_фото,"NG=0;NZ=0"), 1);
+	
+	code_comment = right(format(strlen(Comment),"NG=0;NZ=0"), 2);
+	code_comment = ?(strlen(code_comment) = 1, "0"+code_comment, code_comment);
+	
+	AddProjectEventResult.RegCode = code_nn + code_files + code_comment;
+	
+	project_events.РегКод = AddProjectEventResult.RegCode;
+	project_events.Наименование = AddProjectEventResult.RegCode;
+	
+	project_events.Записать();
+	
+	
+	return AddProjectEventResult;
+	
+endfunction
+
+function GetEventUser(UserKey)
+	TypeUserData = ФабрикаXDTO.Тип("ProjectEvents", "UserData");
+	TypeEventData = ФабрикаXDTO.Тип("ProjectEvents", "EventData");
+	
+	UserData = ФабрикаXDTO.Создать(TypeUserData);
+	
+	event_user = Справочники.ProjectEventUsers.НайтиПоРеквизиту("КлючДоступа", UserKey);
+	
+	if event_user = Справочники.ProjectEventUsers.ПустаяСсылка() then
+		//UserData.Project = -1;
+	else
+		if event_user.Проект = Справочники.Проекты.ПустаяСсылка() then
+			UserData.Project = 0;
+		else
+			UserData.Project = event_user.Проект.Код;
+		endif;		
+		
+		for each строка_событие in event_user.ДоступныеСобытия do
+			EventData = ФабрикаXDTO.Создать(TypeEventData);
+			EventData.EventId = строка_событие.Событие.Код;
+			EventData.EventName = строка_событие.Событие.Наименование;
+			EventData.EventDescription = строка_событие.Событие.Описание;			
+			
+			UserData.Events.Добавить(EventData);
+		enddo;		
+	endif;
+	
+	return UserData;	
+endfunction
+
+function GetNearestProjects(UserKey, Latitude, Longitude)
+	TypeNearestProjects	 = ФабрикаXDTO.Тип("ProjectEvents", "NearestProjects");
+	TypeNearestProject	 = ФабрикаXDTO.Тип("ProjectEvents", "NearestProject");	
+	TypeResponseData = 			ФабрикаXDTO.Тип("ProjectEvents", "ResponseData");
+	
+	NearestProjects = ФабрикаXDTO.Создать(TypeNearestProjects);
+	
+	event_user = Справочники.ProjectEventUsers.НайтиПоРеквизиту("КлючДоступа", UserKey);
+	
+	if event_user = Справочники.ProjectEventUsers.ПустаяСсылка() then
+		AddResponseData(NearestProjects, TypeResponseData, true, "Не найден пользователь");
+		return NearestProjects;
+	elsif event_user.Проект <> Справочники.Проекты.ПустаяСсылка() then
+		AddResponseData(NearestProjects, TypeResponseData, false, "Проект жестко привязан");
+		return NearestProjects;
+	else
+		радиус_метров = 1000;
+		
+		запрос = new query();
+		запрос.Текст = "
+		|select ссылка, 
+		|case 
+		|when Широта>"+format(Latitude,"NDS='.'")+" then Широта-"+format(Latitude,"NDS='.'")+"
+		|else "+format(Latitude,"NDS='.'")+"-Широта
+		|end latdif 
+		|into ВТРазницаШирот from справочник.проекты;
+		|
+		|select проекты.код, проекты.Широта, проекты.Долгота, проекты.КраткоеОписание
+		|from справочник.проекты проекты inner join ВТРазницаШирот on (проекты.ссылка=ВТРазницаШирот.ссылка)
+		|where ВТРазницаШирот.latdif<="+format((радиус_метров/111319.491),"NDS='.'");
+		
+		результат = запрос.Выполнить().Выбрать();
+		
+		if результат.Количество() = 0 then
+			AddResponseData(NearestProjects, TypeResponseData, false, "Не найдены проекты в радиусе 1км");
+			return NearestProjects;
+		endif;		
+		
+		while результат.Следующий() do
+			расстояние_метров = КоординатыВПределахДистанции(результат.Широта,результат.Долгота,Latitude,Longitude,радиус_метров);
+			if (расстояние_метров <> -1) then
+				NearestProject = ФабрикаXDTO.Создать(TypeNearestProject);
+				NearestProject.ProjectID 	= результат.Код;
+				NearestProject.Description 	= результат.КраткоеОписание;
+				NearestProject.Distance 	= int(расстояние_метров);
+				
+				NearestProjects.NearestProject.Добавить(NearestProject);
+			endif;		
+		enddo;
+	endif;
+	
+	return NearestProjects;
+endfunction
+
+function КоординатыВПределахДистанции(lat1, lon1, lat2, lon2, distance)
+	radLat1 = lat1 * (3.1415926535897932/180);
+	radLon1 = lon1 * (3.1415926535897932/180);
+	radLat2 = lat2 * (3.1415926535897932/180);
+	radLon2 = lon2 * (3.1415926535897932/180);
+    	
+	distance_ = 6372795*acos(sin(radLat1)*sin(radLat2)+cos(radLat1)*cos(radLat2)*cos(radLon2 - radLon1));
+    
+	return ?(distance_ <= distance, distance_, -1);
+endfunction
